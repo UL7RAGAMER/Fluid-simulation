@@ -16,11 +16,17 @@
 #include "gtc/matrix_transform.hpp"
 #include "gtc/type_ptr.hpp"
 #include "Shader.h" // Make sure this can handle compute shaders now
-
+void mouse_callback(GLFWwindow* window, double xpos, double ypos);
 void ComputeCircleVertices(std::vector<float>& vertices, int numSegments, float radius);
-
+float random_float(float min, float max);
 // --- Global variable for gravity strength, controllable by ImGui
 float gravityStrength = 0.5f;
+struct mouse_pos {
+    double x;
+    double y;
+	bool pressed;
+};
+
 
 int main()
 {
@@ -100,20 +106,20 @@ int main()
     glBindBuffer(GL_ARRAY_BUFFER, positionSSBO);
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(glm::vec2), (void*)0);
-    
+
     glBindBuffer(GL_ARRAY_BUFFER, velocitySSBO);
     glEnableVertexAttribArray(2);
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(glm::vec2), (void*)0);
     glVertexAttribDivisor(2, 1); // Tell OpenGL this is an instanced vertex attribute.
 
-    
+
     glVertexAttribDivisor(1, 1); // Enable instancing
 
     glBindVertexArray(0);
 
     // --- Load our two separate shader programs ---
-    Shader renderShader("Basic.shader"); 
-    Shader computeShader("physics.comp"); 
+    Shader renderShader("Basic.shader");
+    Shader computeShader("physics.comp");
 
     float lastFrame = 0.0f;
 
@@ -123,8 +129,13 @@ int main()
         float deltaTime = currentFrame - lastFrame;
         lastFrame = currentFrame;
 
-        // --- PHYSICS STEP ---
-        // 1. Activate the compute shader program
+        int isMouseDown = (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS);
+        double xpos, ypos;
+        glfwGetCursorPos(window, &xpos, &ypos);
+        int width, height;
+        glfwGetWindowSize(window, &width, &height);
+        float mouseX = (float)(xpos / width) * 2.0f - 1.0f;
+        float mouseY = 1.0f - (float)(ypos / height) * 2.0f; // Y is inverted
         glUseProgram(computeShader.shader_obj);
 
         // 2. Bind the SSBOs to the correct binding points (0 and 1)
@@ -134,6 +145,9 @@ int main()
         // 3. Set the uniforms for the compute shader
         glUniform1f(glGetUniformLocation(computeShader.shader_obj, "deltaTime"), deltaTime);
         glUniform1f(glGetUniformLocation(computeShader.shader_obj, "gravity"), gravityStrength);
+        glUniform1f(glGetUniformLocation(computeShader.shader_obj, "u_time"), (float)glfwGetTime());
+        glUniform1i(glGetUniformLocation(computeShader.shader_obj, "is_mouse_pressed"), isMouseDown);
+        glUniform2f(glGetUniformLocation(computeShader.shader_obj, "mouse_pos"), mouseX, mouseY);
 
         // 4. Dispatch the compute shader!
         glDispatchCompute((particleCount + 128 - 1) / 128, 1, 1);
@@ -169,6 +183,11 @@ int main()
     }
     glfwTerminate();
     return 0;
+}
+
+void mouse_callback(GLFWwindow* window, double xpos, double ypos)
+{
+
 }
 
 
