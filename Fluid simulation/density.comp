@@ -1,0 +1,69 @@
+#version 430 core
+layout(local_size_x = 128, local_size_y = 1, local_size_z = 1) in;
+
+// BINDING 0: Particle Positions (Read-only)
+layout(std430, binding = 0) readonly buffer PositionBuffer {
+    vec2 positions[];
+};
+
+// BINDING 1: Particle Densities (Write-only)
+layout(std430, binding = 1) writeonly buffer DensityBuffer {
+    float densities[];
+};
+
+// BINDING 2: Particle Pressures (Write-only)
+layout(std430, binding = 2) writeonly buffer PressureBuffer {
+    float pressures[];
+};
+
+// --- Uniforms ---
+uniform uint particleCount;
+
+// --- SPH Parameters ---
+uniform float particleMass;
+uniform float smoothingRadius; // The core interaction radius 'h'
+uniform float gasConstant;     // Relates density to pressure
+uniform float restDensity;     // The target density of the fluid
+
+// --- SPH Kernel Functions ---
+// We pre-calculate constants for efficiency.
+const float PI = 3.14159265359;
+const float POLY6_COEFF = 315.0 / (64.0 * PI);
+
+// Poly6 smoothing kernel for density calculation
+// W_poly6(r, h) = (315 / (64 * pi * h^9)) * (h^2 - r^2)^3
+float poly6_kernel(float distSq, float h) {
+    float h2 = h * h;
+    if (distSq > h2) return 0.0;
+    float term = h2 - distSq;
+    return (POLY6_COEFF / pow(h, 9.0)) * term * term * term;
+}
+
+void main() {
+    uint id = gl_GlobalInvocationID.x;
+    if (id >= particleCount) return;
+
+    vec2 pos_i = positions[id];
+    float density = 0.0;
+
+    // Calculate density by summing the influence of all other particles
+    // This is an O(N^2) brute-force approach. For performance, a spatial grid
+    // would be used to find neighbors much faster.
+    for (uint j = 0; j < particleCount; j++) {
+        vec2 pos_j = positions[j];
+        vec2 r_vec = pos_i - pos_j;
+        float distSq = dot(r_vec, r_vec);
+
+        // Add particle's influence to the density if it's within the smoothing radius
+        if (distSq < smoothingRadius * smoothingRadius) {
+            density += particleMass * poly6_kernel(distSq, smoothingRadius);
+        }
+    }
+
+    // Write the final calculated density
+    densities[id] = density;
+
+    // Calculate pressure using the equation of state (Ideal Gas Law adapted for SPH)
+    // p = k * (rho - rho_0)
+    pressures[id] = gasConstant * (density - restDensity);
+}

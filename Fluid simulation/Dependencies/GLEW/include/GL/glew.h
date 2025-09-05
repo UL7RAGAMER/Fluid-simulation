@@ -4463,7 +4463,7 @@ typedef void (GLAPIENTRY * PFNGLVERTEXARRAYVERTEXBUFFERSPROC) (GLuint vaobj, GLu
 #define glCreateTransformFeedbacks GLEW_GET_FUN(__glewCreateTransformFeedbacks)
 #define glCreateVertexArrays GLEW_GET_FUN(__glewCreateVertexArrays)
 #define glDisableVertexArrayAttrib GLEW_GET_FUN(__glewDisableVertexArrayAttrib)
-#define glEnableVertexArrayAttrib GLEW_GET_FUN(__glewEnableVertexArrayAttrib)
+#define glEnableVertexAttribArray GLEW_GET_FUN(__glewEnableVertexArrayAttrib)
 #define glFlushMappedNamedBufferRange GLEW_GET_FUN(__glewFlushMappedNamedBufferRange)
 #define glGenerateTextureMipmap GLEW_GET_FUN(__glewGenerateTextureMipmap)
 #define glGetCompressedTextureImage GLEW_GET_FUN(__glewGetCompressedTextureImage)

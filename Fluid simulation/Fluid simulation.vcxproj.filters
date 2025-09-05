@@ -45,5 +45,9 @@
   <ItemGroup>
     <None Include="Basic.shader" />
     <None Include="physics.comp" />
+    <None Include="grid_clear.comp" />
+    <None Include="grid_count.comp" />
+    <None Include="grid_vis.shader" />
+    <None Include="density.comp" />
   </ItemGroup>
 </Project>
