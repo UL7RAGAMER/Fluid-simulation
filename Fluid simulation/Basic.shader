@@ -9,10 +9,28 @@ layout (location = 2) in float aDensity;  // Particle density (instanced from de
 // Pass density to the fragment shader
 out float v_density;
 
-void main()
-{
-    gl_Position = vec4(aPos.xy + aOffset, 0.0, 1.0);
+// in your render vertex shader (Basic.shader vertex part)
+uniform float simBoundaryLimit; // same value you sent to physics.comp
+uniform float displayAspect;    // g_ViewportWidth / g_ViewportHeight
+layout(location = 0) in vec3 aVertex;       // circle mesh
+layout(location = 1) in vec2 instancePos;   // particle position (world coords)
+
+void main() {
+    // Convert world pos -> normalized device coords
+    vec2 ndc = instancePos / simBoundaryLimit; // now in [-1,1] if simBoundaryLimit==1
+
+    // If viewport is not square and you want to keep circles round, optionally correct X:
+    // ndc.x *= (displayAspect); // uncomment if needed when using full-window viewport
+
+    // compute vertex position offset by instance
+    vec2 vertexOffset = aVertex.xy; // circle mesh coordinates in local space
+    // scale vertex offset so circle radius stays consistent in NDC
+    // (if you created circles in NDC radius already this may be identity)
+    vec2 pos = ndc + vertexOffset;
+
+    gl_Position = vec4(pos, 0.0, 1.0);
     v_density = aDensity;
+
 }
 
 

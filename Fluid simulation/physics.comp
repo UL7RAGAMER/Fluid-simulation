@@ -42,8 +42,8 @@ const float SPIKY_GRAD_COEFF = -45.0 / PI;
 const float VISC_LAP_COEFF = 45.0 / PI;
 
 
-vec2 force_boundary = vec2(0.0);
-
+uniform float boundary_limit;   // half-width of the simulation domain, e.g. 1.0
+uniform float boundary_radius;  // region (distance from wall) where wall force acts
 
 float spiky_kernel_gradient(float dist, float h) {
     if (dist > h) return 0.0;
@@ -69,9 +69,20 @@ void main() {
     vec2 vel_i = velocities[id];
     float density_i = densities[id];
     float pressure_i = pressures[id];
+    // safety guards
+    if (isnan(pos_i.x) || isnan(pos_i.y) || isinf(pos_i.x) || isinf(pos_i.y)) {
+        pos_i = vec2(0.0, 0.0);
+        vel_i = vec2(0.0, 0.0);
+    }
+    if (density_i <= 0.0 || isnan(density_i) || isinf(density_i)) {
+        density_i = 1e-4;
+    }
+    if (pressure_i != pressure_i) { // NaN check: NaN != NaN
+        pressure_i = 0.0;
+    }
 
-    if (density_i < 0.0001) {
-        density_i = 0.0001;
+    if (density_i < 0.01) {
+        density_i = 0.01;
     }
 
     // Initialize forces
@@ -104,60 +115,94 @@ void main() {
     }
     
     // External Force (Gravity)
-    vec2 force_gravity = vec2(0.0, -gravity) * density_i;
-
+    vec2 gravity_accel = vec2(0.0, -gravity);
     // CHANGE 2: Calculate the mouse force here, before integration
     // Using "> 0.5" is safer for floats than "== 1.0"
     if (is_mouse_pressed > 0.5) {
         vec2 from_mouse = pos_i - mouse_pos;
         float dist_to_mouse = length(from_mouse);
-        float mouse_radius = 0.5; // The mouse will only affect particles within this radius
+        float mouse_radius = 0.19; // The mouse will only affect particles within this radius
 
         if (dist_to_mouse < mouse_radius) {
             // This creates a force that pushes particles away from the mouse, getting weaker with distance
-            force_mouse = -normalize(from_mouse) * 25.0 * (mouse_radius + dist_to_mouse);
+            force_mouse = normalize(from_mouse) * 150.0 * (mouse_radius + dist_to_mouse);
         }
     }
 
-    // --- INTEGRATE ---
-    // CHANGE 3: Add the mouse force to the total force calculation
-    vec2 total_force = force_pressure + force_viscosity + force_gravity + force_mouse + force_boundary;
-    vec2 acceleration = total_force / density_i;
-    
+    // --- Boundary forces (pre-integration push) ---
+    // local per-particle boundary force
+    vec2 force_boundary = vec2(0.0);
+
+    // left
+    float dist_left = pos_i.x - (-boundary_limit);
+    if (dist_left < boundary_radius) {
+        float penetration = (boundary_radius - dist_left);
+        force_boundary.x += boundaryStiffness * penetration * penetration * particleMass; // scaled by mass
+    }
+    // right
+    float dist_right = (boundary_limit) - pos_i.x;
+    if (dist_right < boundary_radius) {
+        float penetration = (boundary_radius - dist_right);
+        force_boundary.x -= boundaryStiffness * penetration * penetration * particleMass;
+    }
+    // bottom
+    float dist_bottom = pos_i.y - (-boundary_limit);
+    if (dist_bottom < boundary_radius) {
+        float penetration = (boundary_radius - dist_bottom);
+        force_boundary.y += boundaryStiffness * penetration * penetration * particleMass;
+    }
+    // top
+    float dist_top = (boundary_limit) - pos_i.y;
+    if (dist_top < boundary_radius) {
+        float penetration = (boundary_radius - dist_top);
+        force_boundary.y -= boundaryStiffness * penetration * penetration * particleMass;
+    }
+
+    // --- Sum forces; convert to acceleration ---
+    // force_pressure and force_viscosity are forces (scaled by mass in loop)
+    vec2 total_force = force_pressure + force_viscosity + force_mouse + force_boundary;
+    // acceleration from those forces:
+    vec2 accel_from_forces = total_force / 1; // avoid div0
+    // total acceleration includes gravity
+    vec2 acceleration = accel_from_forces + gravity_accel;
+
+    // --- Integrate (semi-implicit Euler: update velocity from accel, then position from new velocity) ---
+    // semi-implicit helps stability: v_{t+dt} = v_t + a*dt ; x_{t+dt} = x_t + v_{t+dt}*dt
     vel_i += acceleration * deltaTime;
     pos_i += vel_i * deltaTime;
 
-    // --- BOUNDARY COLLISION ---
-    float boundary_limit = 1.0; // The boundary is at -1.0 and 1.0
-    float boundary_radius = 0.05; // How far from the wall the force starts acting
-
-    // Left Wall
-    float dist_left = pos_i.x - (-boundary_limit);
-    if (dist_left < boundary_radius) {
-        force_boundary.x += boundaryStiffness * (boundary_radius - dist_left);
-        vel_i.x *= -boundaryDamping; // Reverse and dampen velocity
+    // --- Post-integration position clamping & velocity damping to prevent tunnelling ---
+    float epsilon = 1e-4;
+    // left wall clamp
+    if (pos_i.x < -boundary_limit + epsilon) {
+        pos_i.x = -boundary_limit + epsilon;
+        vel_i.x = -vel_i.x * boundaryDamping;
+    }
+    // right wall clamp
+    if (pos_i.x > boundary_limit - epsilon) {
+        pos_i.x = boundary_limit - epsilon;
+        vel_i.x = -vel_i.x * boundaryDamping;
+    }
+    // bottom clamp
+    if (pos_i.y < -boundary_limit + epsilon) {
+        pos_i.y = -boundary_limit + epsilon;
+        vel_i.y = -vel_i.y * boundaryDamping;
+    }
+    // top clamp
+    if (pos_i.y > boundary_limit - epsilon) {
+        pos_i.y = boundary_limit - epsilon;
+        vel_i.y = -vel_i.y * boundaryDamping;
     }
 
-    // Right Wall
-    float dist_right = (boundary_limit) - pos_i.x;
-    if (dist_right < boundary_radius) {
-        force_boundary.x -= boundaryStiffness * (boundary_radius - dist_right);
-        vel_i.x *= -boundaryDamping;
-    }
+    // small velocity threshold to reduce jitter at rest
+    if (length(vel_i) < 1e-4) vel_i = vec2(0.0);
+    // global velocity damping to remove small oscillations (per-frame)
+    float globalDamping = 1.0 - clamp(0.25 * deltaTime, 0.0, 0.25); // 0.75..1.0
+    vel_i *= globalDamping;
 
-    // Bottom Wall
-    float dist_bottom = pos_i.y - (-boundary_limit);
-    if (dist_bottom < boundary_radius) {
-        force_boundary.y += boundaryStiffness * (boundary_radius - dist_bottom);
-        vel_i.y *= -boundaryDamping;
-    }
-
-    // Top Wall
-    float dist_top = (boundary_limit) - pos_i.y;
-    if (dist_top < boundary_radius) {
-        force_boundary.y -= boundaryStiffness * (boundary_radius - dist_top);
-        vel_i.y *= -boundaryDamping;
-    }
+        // emergency clamps
+    if (length(vel_i) > 20.0) vel_i = normalize(vel_i) * 20.0;
+    if (length(pos_i) > 100.0) pos_i = clamp(pos_i, vec2(-1e2), vec2(1e2)); // safety
 
     // --- WRITE FINAL DATA ---
     positions[id] = pos_i;

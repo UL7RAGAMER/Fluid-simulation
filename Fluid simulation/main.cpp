@@ -7,7 +7,7 @@
 #include <random>
 #include <cmath> // Required for std::sqrt
 #define STB_IMAGE_IMPLEMENTATION
-#include "stb_image.h"
+#include "stb_image.h" // Corrected from .hh to .h
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 #include "imgui.h"
@@ -17,12 +17,23 @@
 #include "gtc/matrix_transform.hpp"
 #include "gtc/type_ptr.hpp"
 #include "Shader.h" // Make sure this can handle compute shaders now
+
+#define log(x) std::cout << x << std::endl
+
+// --- Function Prototypes ---
 void ComputeCircleVertices(std::vector<float>& vertices, int numSegments, float radius);
+void framebuffer_size_callback(GLFWwindow* window, int width, int height);
+
+// --- NEW --- Global viewport dimensions for mouse coordinate correction and aspect ratio
+int g_ViewportX = 0;
+int g_ViewportY = 0;
+int g_ViewportWidth = 2560;
+int g_ViewportHeight = 1351;
+
 // --- Global variable for gravity strength, controllable by ImGui
-float gravityStrength = 0.0f;
 const unsigned int GRID_DIM = 64; // A 64x64 grid
 const unsigned int NUM_GRID_CELLS = GRID_DIM * GRID_DIM;
-const float CELL_SIZE = 2.0f / GRID_DIM; // Domain is [-1, 1], 
+const float CELL_SIZE = 2.0f / GRID_DIM; // Domain is [-1, 1],
 
 int main()
 {
@@ -34,8 +45,16 @@ int main()
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    window = glfwCreateWindow(800, 800, "Compute Shader Gravity", NULL, NULL);
+    window = glfwCreateWindow(2560, 1351, "Resizable Compute Shader Gravity", NULL, NULL);
+    if (!window)
+    {
+        glfwTerminate();
+        return -1;
+    }
     glfwMakeContextCurrent(window);
+    // --- Register the resize callback function ---
+    glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
+
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -44,24 +63,24 @@ int main()
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 430");
 
-    if (!window)
-    {
-        glfwTerminate();
-        return -1;
-    }
-
     if (glewInit() != GLEW_OK) {
         std::cout << "Error!" << std::endl;
         return -1;
     }
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glfwSwapInterval(0);
+    // --- NEW --- Set initial viewport correctly by calling the callback once
+    int initialWidth, initialHeight;
+    glfwGetFramebufferSize(window, &initialWidth, &initialHeight);
+    framebuffer_size_callback(window, initialWidth, initialHeight);
+    int initialViewportMin = std::min(initialWidth, initialHeight);
 
     std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << std::endl;
 
     std::vector <float> vertices;
-    ComputeCircleVertices(vertices, 32, 0.01f);
-    const int particleCount = 10000;
+    ComputeCircleVertices(vertices, 32, 0.002f);
+    const int particleCount = 50000;
 
     // --- We still generate initial data on the CPU ---
     std::vector<glm::vec2> initialPositions(particleCount);
@@ -89,8 +108,6 @@ int main()
 
         // Set the initial position based on the grid coordinates, spacing, and centering offset.
         initialPositions[i] = glm::vec2(col * spacing - offset, row * spacing - offset);
-
-
     }
     // --- NEW --- Setup for drawing the grid visualization
     unsigned int gridVAO, gridVBO;
@@ -109,7 +126,7 @@ int main()
     glBindVertexArray(gridVAO);
     glBindBuffer(GL_ARRAY_BUFFER, gridVBO);
     glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), &quadVertices, GL_STATIC_DRAW);
-    glEnableVertexAttribArray(gridVAO, 0);
+    glEnableVertexAttribArray(gridVAO, 0); // FIX: Use two-argument version
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
     glBindVertexArray(0);
 
@@ -119,30 +136,28 @@ int main()
     glGenBuffers(1, &circleVBO);
     glBindVertexArray(circleVAO);
     glBindBuffer(GL_ARRAY_BUFFER, circleVBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(float) * vertices.size(), &vertices[0], GL_STATIC_DRAW);
-    glEnableVertexAttribArray(circleVAO,0);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(float) * vertices.size(), vertices.data(), GL_STATIC_DRAW);
+    glEnableVertexAttribArray(circleVAO, 0); // FIX: Use two-argument version
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
 
     unsigned int positionSSBO, velocitySSBO;
+    unsigned int densitySSBO, cellCountsSSBO, pressureSSBO;
 
-    unsigned int densitySSBO, cellCountsSSBO,pressureSSBO;
     // Position SSBO
     glGenBuffers(1, &positionSSBO);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, positionSSBO);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(glm::vec2) * particleCount, &initialPositions[0], GL_DYNAMIC_DRAW);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(glm::vec2) * particleCount, initialPositions.data(), GL_DYNAMIC_DRAW);
 
     // Velocity SSBO
     glGenBuffers(1, &velocitySSBO);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, velocitySSBO);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(glm::vec2) * particleCount, &initialVelocities[0], GL_DYNAMIC_DRAW);
-
-  
+    glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(glm::vec2) * particleCount, initialVelocities.data(), GL_DYNAMIC_DRAW);
 
     // Density SSBO (stores the calculated density for each particle)
     glGenBuffers(1, &densitySSBO);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, densitySSBO);
     glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(float) * particleCount, NULL, GL_DYNAMIC_DRAW);
-   
+
     glGenBuffers(1, &pressureSSBO);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, pressureSSBO);
     glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(float) * particleCount, NULL, GL_DYNAMIC_DRAW);
@@ -152,30 +167,29 @@ int main()
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, cellCountsSSBO);
     glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(unsigned int) * NUM_GRID_CELLS, NULL, GL_DYNAMIC_DRAW);
 
-
-    // The position and velocity buffer is now used for both physics calculation and rendering.
+    // Bind particle instance data
+    glBindVertexArray(circleVAO);
+    // Position
     glBindBuffer(GL_ARRAY_BUFFER, positionSSBO);
-    glEnableVertexAttribArray(circleVAO,1);
+    glEnableVertexAttribArray(circleVAO, 1); // FIX: Use two-argument version
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(glm::vec2), (void*)0);
-
+    glVertexAttribDivisor(1, 1);
+    // Velocity
     glBindBuffer(GL_ARRAY_BUFFER, velocitySSBO);
-    glEnableVertexAttribArray(circleVAO,2);
+    glEnableVertexAttribArray(circleVAO, 2); // FIX: Use two-argument version
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(glm::vec2), (void*)0);
-    glVertexAttribDivisor(2, 1); // Tell OpenGL this is an instanced vertex attribute.
-
-
+    glVertexAttribDivisor(2, 1);
+    // Density
     glBindBuffer(GL_ARRAY_BUFFER, densitySSBO);
-    glEnableVertexAttribArray(circleVAO,3); 
+    glEnableVertexAttribArray(circleVAO, 3); // FIX: Use two-argument version
     glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(float), (void*)0);
-    glVertexAttribDivisor(3, 1); // This is also an instanced attribute
-
-
+    glVertexAttribDivisor(3, 1);
+    // Pressure
     glBindBuffer(GL_ARRAY_BUFFER, pressureSSBO);
-    glEnableVertexAttribArray(circleVAO, 3);
+    glEnableVertexAttribArray(circleVAO, 4); // FIX: Use two-argument version
     glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, sizeof(float), (void*)0);
-    glVertexAttribDivisor(4, 1); // This is also an instanced attribute
+    glVertexAttribDivisor(4, 1);
 
-    glVertexAttribDivisor(1, 1); // Enable instancing
 
     glBindVertexArray(0);
 
@@ -184,35 +198,81 @@ int main()
     Shader gridVisShader("grid_vis.shader");
 
     Shader physicsUpdateShader("physics.comp");
-	Shader densityShader("density.comp");
+    Shader densityShader("density.comp");
     Shader gridClearShader("grid_clear.comp");
     Shader gridCountShader("grid_count.comp");
     float lastFrame = 0.0f;
 
-    float forceMultiplier = 1.0/200.0;
+    float forceMultiplier = 1.0 / 200.0;
     float separationStiffness = 400.0;
-    float viscosity = 0.1;
+    float viscosity = 0.1f;
     float particleMass = 0.01f;
-    float smoothingRadius = 0.8f;
-    float viscosityConstant =0.5f;
+    float smoothingRadius = 0.2f;
+    float viscosityConstant = 0.25f;
     float gasConstant = 1.0f;
-    float restDensity = 1.0f;
-    float boundaryStiffness = 3000.0f;
-    float boundaryDamping = 0.5f;
-    float  pressure_multipiler = 1.0f;
+    float restDensity = 10.0f;
+    float boundaryStiffness = 1200.0f;
+    float boundaryDamping = 0.75f;
+    float pressure_multipiler = 0.01f;
+    float gravityStrength = 0.0f;
+
     while (!glfwWindowShouldClose(window))
     {
-        float currentFrame = glfwGetTime();
+        // compute a scale from current viewport to the original initial viewport
+        float viewportMin = (float)std::min(g_ViewportWidth, g_ViewportHeight);
+        float initMin = (float)initialViewportMin;
+        float simScale = viewportMin / initMin;               // 1.0 at original size, <1 if smaller, >1 if larger
+
+        // clamp scale to avoid extreme domains
+        float simScaleClamped = std::max(0.5f, std::min(simScale, 2.0f)); // adjust min/max as you like
+
+        // baseline domain half-size is 1.0 at original size; scale it
+        float simBoundaryLimit = 1.0f * simScaleClamped;
+        // --- Start of Frame: Poll events and calculate delta time ---
+        glfwPollEvents();
+
+        float currentFrame = (float)glfwGetTime();
         float deltaTime = currentFrame - lastFrame;
         lastFrame = currentFrame;
 
+        // --- IMGUI: Start new frame ---
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+
+        // --- Input & Mouse Coordinate Processing ---
         int isMouseDown = (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS);
+
+        ImGuiIO& io = ImGui::GetIO();
+        if (io.WantCaptureMouse)
+        {
+            isMouseDown = 0; // Prevent interaction if mouse is over an ImGui window
+        }
+        
         double xpos, ypos;
         glfwGetCursorPos(window, &xpos, &ypos);
-        int width, height;
-        glfwGetWindowSize(window, &width, &height);
-        float mouseX = (float)(xpos / width) * 2.0f - 1.0f;
-        float mouseY = 1.0f - (float)(ypos / height) * 2.0f; // Y is inverted
+
+        // 1. Convert cursor position directly to normalized viewport coordinates [0, 1]
+        // g_ViewportX and g_ViewportY are the offsets of the viewport in framebuffer pixels
+        // g_ViewportWidth and g_ViewportHeight are the dimensions of the viewport in framebuffer pixels
+        float normX = (float)(xpos - g_ViewportX) / (float)g_ViewportWidth;
+        float normY = (float)(ypos - g_ViewportY) / (float)g_ViewportHeight;
+
+        // 2. Convert normalized viewport coordinates to OpenGL's Normalized Device Coordinates [-1, 1]
+        float mouseX = normX * 2.0f* simScaleClamped - 1.0f* simScaleClamped;
+        float mouseY = 1.0f * simScaleClamped - normY * 2.0f * simScaleClamped; // Invert Y-axis for OpenGL
+
+
+        // 3. Disable mouse interaction if the cursor is outside the viewport (in the black bars)
+        if (normX < 0.0f || normX > 1.0f || normY < 0.0f || normY > 1.0f) {
+            isMouseDown = 0;
+        }
+
+        if (mouseX < -1.0f || mouseX > 1.0f || mouseY < -1.0f || mouseY > 1.0f) {
+            isMouseDown = 0; // Don't interact if mouse is outside the sim area
+        }
+		//log("Mouse NDC: (" << mouseX << ", " << mouseY << "), isMouseDown: " << isMouseDown);
+        
 
         // 1. CLEAR: Reset the grid cell counters to zero
         glUseProgram(gridClearShader.shader_obj);
@@ -230,7 +290,6 @@ int main()
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT); // Wait for counting to finish
 
         // 3. CALCULATE: Calculate density
-        
         glUseProgram(densityShader.shader_obj);
         glUniform1ui(glGetUniformLocation(densityShader.shader_obj, "particleCount"), particleCount);
         glUniform1f(glGetUniformLocation(densityShader.shader_obj, "particleMass"), particleMass);
@@ -246,20 +305,29 @@ int main()
         glDispatchCompute((particleCount + 127) / 128, 1, 1);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT); // Ensure density pass is complete
 
-        // 2. FORCE PASS: Apply forces and integrate particle positions
+        // 4. FORCE PASS: Apply forces and integrate particle positions
         glUseProgram(physicsUpdateShader.shader_obj);
         glUniform1ui(glGetUniformLocation(physicsUpdateShader.shader_obj, "particleCount"), particleCount);
-        glUniform1f(glGetUniformLocation(physicsUpdateShader.shader_obj, "deltaTime"), deltaTime > 0.016f ? 0.016f : deltaTime); // Clamp delta time
+        glUniform1f(glGetUniformLocation(physicsUpdateShader.shader_obj, "deltaTime"), deltaTime > 0.008f ? 0.008f : deltaTime); // Clamp delta time
         glUniform1f(glGetUniformLocation(physicsUpdateShader.shader_obj, "gravity"), gravityStrength);
         glUniform1f(glGetUniformLocation(physicsUpdateShader.shader_obj, "u_time"), currentFrame);
         glUniform1f(glGetUniformLocation(physicsUpdateShader.shader_obj, "particleMass"), particleMass);
         glUniform1f(glGetUniformLocation(physicsUpdateShader.shader_obj, "smoothingRadius"), smoothingRadius);
         glUniform1f(glGetUniformLocation(physicsUpdateShader.shader_obj, "viscosityConstant"), viscosityConstant);
         glUniform1f(glGetUniformLocation(physicsUpdateShader.shader_obj, "is_mouse_pressed"), isMouseDown);
-        glUniform2f(glGetUniformLocation(physicsUpdateShader.shader_obj, "mouse_pos"), mouseX,mouseY);
+        glUniform2f(glGetUniformLocation(physicsUpdateShader.shader_obj, "mouse_pos"), mouseX, mouseY);
         glUniform1f(glGetUniformLocation(physicsUpdateShader.shader_obj, "boundaryStiffness"), boundaryStiffness);
         glUniform1f(glGetUniformLocation(physicsUpdateShader.shader_obj, "boundaryDamping"), boundaryDamping);
         glUniform1f(glGetUniformLocation(physicsUpdateShader.shader_obj, "pressure_multipiler"), pressure_multipiler);
+
+
+        // compute boundary_radius relative to smoothingRadius (keeps visual size consistent)
+        float simBoundaryRadius = std::max(0.005f, smoothingRadius * 0.05f); // min radius 0.005
+
+        // upload to shader
+        glUniform1f(glGetUniformLocation(physicsUpdateShader.shader_obj, "boundary_limit"), simBoundaryLimit);
+        glUniform1f(glGetUniformLocation(physicsUpdateShader.shader_obj, "boundary_radius"), simBoundaryRadius);
+
         // Bind buffers for the force pass
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, positionSSBO);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, velocitySSBO);
@@ -267,7 +335,8 @@ int main()
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, pressureSSBO);
 
         glDispatchCompute((particleCount + 127) / 128, 1, 1);
-        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT); // Ensure force pass is complete
+        // --- FIX --- Use a barrier that ensures compute shader writes are visible to the vertex rendering stage.
+        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
 
         // --- RENDER STEP ---
         glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
@@ -276,36 +345,21 @@ int main()
         // Activate the rendering shader program
         glUseProgram(renderShader.shader_obj);
         glBindVertexArray(circleVAO);
-        glDrawArraysInstanced(GL_TRIANGLE_FAN, 0, vertices.size() / 3, particleCount);
-
-        glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
-
-        // Activate the rendering shader program
-        glUseProgram(renderShader.shader_obj);
-        glBindVertexArray(circleVAO);
-        glDrawArraysInstanced(GL_TRIANGLE_FAN, 0, vertices.size() / 3, particleCount);
-
-        // --- NEW --- Draw the grid visualization
-        //glUseProgram(gridVisShader.shader_obj);
-        //glUniform1ui(glGetUniformLocation(gridVisShader.shader_obj, "gridDim"), GRID_DIM);
-        //glBindVertexArray(gridVAO);
-        //glDrawArrays(GL_TRIANGLES, 0, 6);
-        //glBindVertexArray(0);
+        glUniform1f(glGetUniformLocation(renderShader.shader_obj, "simBoundaryLimit"), simBoundaryLimit);
+        float displayAspect = (float)g_ViewportWidth / (float)g_ViewportHeight;
+        glUniform1f(glGetUniformLocation(renderShader.shader_obj, "displayAspect"), displayAspect);
+        glDrawArraysInstanced(GL_TRIANGLE_FAN, 0, (GLsizei)(vertices.size() / 3), particleCount);
 
         // --- IMGUI STEP ---
-        ImGui_ImplOpenGL3_NewFrame();
-        ImGui_ImplGlfw_NewFrame();
-        ImGui::NewFrame();
-
         ImGui::Begin("Controls");
-        ImGui::SliderFloat("Gravity", &gravityStrength, 0.0f, 1.0f);
+        ImGui::SliderFloat("Gravity", &gravityStrength, 0.0f, 10.0f);
         ImGui::SliderFloat("restDensity", &restDensity, 0.0f, 10.0f);
         ImGui::SliderFloat("gasConstant", &gasConstant, 0.0f, 10.0f);
-        ImGui::SliderFloat("smoothingRadius", &smoothingRadius, 0.0f, 10.0f);
         ImGui::SliderFloat("Boundary Stiffness", &boundaryStiffness, 500.0f, 10000.0f);
         ImGui::SliderFloat("Boundary Damping", &boundaryDamping, 0.1f, 1.0f);
-        ImGui::SliderFloat("Pressure Multipiler", &pressure_multipiler, 0.0f, 100.0f);
+        ImGui::SliderFloat("viscosity", &viscosity, 0.0f, 2.0f);
+        ImGui::SliderFloat("viscosityCOnst", &viscosityConstant, 0.0f, 2.0f);
+        ImGui::SliderFloat("pressure_multipiler", &pressure_multipiler, 0.0f, 0.01f);
         ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
         ImGui::End();
 
@@ -313,13 +367,23 @@ int main()
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
         glfwSwapBuffers(window);
-        glfwPollEvents();
     }
     glfwTerminate();
     return 0;
 }
 
+void framebuffer_size_callback(GLFWwindow* window, int width, int height)
+{
+    g_ViewportX = 0;
+    g_ViewportY = 0;
+    g_ViewportWidth = width;
+    g_ViewportHeight = height;
 
+    // Use full window
+    glViewport(0, 0, width, height);
+
+    log("Resized to " << width << "x" << height << ", Viewport: " << g_ViewportWidth << "x" << g_ViewportHeight);
+}
 
 
 void ComputeCircleVertices(std::vector<float>& vertices, int numSegments, float radius)
@@ -338,3 +402,4 @@ void ComputeCircleVertices(std::vector<float>& vertices, int numSegments, float 
         vertices.push_back(0.0f);
     }
 }
+
