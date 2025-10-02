@@ -17,18 +17,19 @@
 #include "gtc/matrix_transform.hpp"
 #include "gtc/type_ptr.hpp"
 #include "Shader.h" // Make sure this can handle compute shaders now
-
+const unsigned int MAX_PARTICLES = 50000; // The max capacity of our buffers
+unsigned int g_currentParticleCount = 50000;  // The number of particles to simulate and draw
 #define log(x) std::cout << x << std::endl
 
 // --- Function Prototypes ---
 void ComputeCircleVertices(std::vector<float>& vertices, int numSegments, float radius);
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
-
+void updateParticleCount(int newCount, unsigned int posSSBO, unsigned int velSSBO);
 // --- NEW --- Global viewport dimensions for mouse coordinate correction and aspect ratio
 int g_ViewportX = 0;
 int g_ViewportY = 0;
-int g_ViewportWidth = 2560;
-int g_ViewportHeight = 1351;
+int g_ViewportWidth = 1920;
+int g_ViewportHeight = 1080;
 
 // --- Global variable for gravity strength, controllable by ImGui
 const unsigned int GRID_DIM = 64; // A 64x64 grid
@@ -45,7 +46,7 @@ int main()
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    window = glfwCreateWindow(2560, 1351, "Resizable Compute Shader Gravity", NULL, NULL);
+    window = glfwCreateWindow(1920,1080, "Resizable Compute Shader Gravity", NULL, NULL);
     if (!window)
     {
         glfwTerminate();
@@ -62,14 +63,15 @@ int main()
     ImGui::StyleColorsDark();
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 430");
-
+    // This line is already in your main() function
+    std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << std::endl;
     if (glewInit() != GLEW_OK) {
         std::cout << "Error!" << std::endl;
         return -1;
     }
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glfwSwapInterval(0);
+    glfwSwapInterval(1);
     // --- NEW --- Set initial viewport correctly by calling the callback once
     int initialWidth, initialHeight;
     glfwGetFramebufferSize(window, &initialWidth, &initialHeight);
@@ -79,12 +81,11 @@ int main()
     std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << std::endl;
 
     std::vector <float> vertices;
-    ComputeCircleVertices(vertices, 32, 0.002f);
-    const int particleCount = 50000;
+    ComputeCircleVertices(vertices, 32, 0.001f);
 
     // --- We still generate initial data on the CPU ---
-    std::vector<glm::vec2> initialPositions(particleCount);
-    std::vector<glm::vec2> initialVelocities(particleCount, glm::vec2(0.0f, 0.0f));
+    std::vector<glm::vec2> initialPositions(g_currentParticleCount);
+    std::vector<glm::vec2> initialVelocities(g_currentParticleCount, glm::vec2(0.0f, 0.0f));
 
 
     std::random_device rd;
@@ -95,13 +96,13 @@ int main()
 
     // --- Grid Configuration ---
     // Set the number of columns for your grid. Using the square root creates a roughly square layout.
-    int numColumns = static_cast<int>(std::sqrt(particleCount));
+    int numColumns = static_cast<int>(std::sqrt(g_currentParticleCount));
     float spacing = 0.05f;
     // Calculate an offset to center the entire grid at the origin (0,0).
     float offset = (numColumns - 1) * spacing / 2.0f;
 
     // --- Initialization Loop ---
-    for (int i = 0; i < particleCount; ++i) {
+    for (int i = 0; i < g_currentParticleCount; ++i) {
         // Calculate the (column, row) position for the current particle.
         int col = i % numColumns;
         int row = i / numColumns;
@@ -146,21 +147,25 @@ int main()
     // Position SSBO
     glGenBuffers(1, &positionSSBO);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, positionSSBO);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(glm::vec2) * particleCount, initialPositions.data(), GL_DYNAMIC_DRAW);
+    // Allocate for the MAX, but only upload the initial data for the current count
+    glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(glm::vec2) * MAX_PARTICLES, nullptr, GL_DYNAMIC_DRAW);
+    glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(glm::vec2) * g_currentParticleCount, initialPositions.data());
 
     // Velocity SSBO
     glGenBuffers(1, &velocitySSBO);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, velocitySSBO);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(glm::vec2) * particleCount, initialVelocities.data(), GL_DYNAMIC_DRAW);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(glm::vec2) * MAX_PARTICLES, nullptr, GL_DYNAMIC_DRAW);
+    glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(glm::vec2) * g_currentParticleCount, initialVelocities.data());
 
-    // Density SSBO (stores the calculated density for each particle)
+    // Density SSBO
     glGenBuffers(1, &densitySSBO);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, densitySSBO);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(float) * particleCount, NULL, GL_DYNAMIC_DRAW);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(float) * MAX_PARTICLES, NULL, GL_DYNAMIC_DRAW);
 
+    // Pressure SSBO
     glGenBuffers(1, &pressureSSBO);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, pressureSSBO);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(float) * particleCount, NULL, GL_DYNAMIC_DRAW);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(float) * MAX_PARTICLES, NULL, GL_DYNAMIC_DRAW);
 
     // Cell Counts SSBO (stores particle count for each grid cell)
     glGenBuffers(1, &cellCountsSSBO);
@@ -194,13 +199,11 @@ int main()
     glBindVertexArray(0);
 
     // --- Load our two separate shader programs ---
-    Shader renderShader("Basic.shader");
-    Shader gridVisShader("grid_vis.shader");
-
-    Shader physicsUpdateShader("physics.comp");
-    Shader densityShader("density.comp");
-    Shader gridClearShader("grid_clear.comp");
-    Shader gridCountShader("grid_count.comp");
+    Shader renderShader("Shaders/Basic.shader");
+    Shader physicsUpdateShader("Shaders/physics.comp");
+    Shader densityShader("Shaders/density.comp");
+    Shader gridClearShader("Shaders/grid_clear.comp");
+    Shader gridCountShader("Shaders/grid_count.comp");
     float lastFrame = 0.0f;
 
     float forceMultiplier = 1.0 / 200.0;
@@ -214,8 +217,9 @@ int main()
     float boundaryStiffness = 1200.0f;
     float boundaryDamping = 0.75f;
     float pressure_multipiler = 0.01f;
-    float gravityStrength = 0.0f;
-
+    float gravityStrength = 9.8f;
+    float surfaceTension = 80.0f;
+    float surfaceThreshold = 1e-8;
     while (!glfwWindowShouldClose(window))
     {
         // compute a scale from current viewport to the original initial viewport
@@ -286,12 +290,12 @@ int main()
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, positionSSBO); // READ positions
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, cellCountsSSBO); // WRITE counts
 
-        glDispatchCompute((particleCount + 127) / 128, 1, 1);
+        glDispatchCompute((g_currentParticleCount + 127) / 128, 1, 1);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT); // Wait for counting to finish
 
         // 3. CALCULATE: Calculate density
         glUseProgram(densityShader.shader_obj);
-        glUniform1ui(glGetUniformLocation(densityShader.shader_obj, "particleCount"), particleCount);
+        glUniform1ui(glGetUniformLocation(densityShader.shader_obj, "particleCount"), g_currentParticleCount);
         glUniform1f(glGetUniformLocation(densityShader.shader_obj, "particleMass"), particleMass);
         glUniform1f(glGetUniformLocation(densityShader.shader_obj, "smoothingRadius"), smoothingRadius);
         glUniform1f(glGetUniformLocation(densityShader.shader_obj, "gasConstant"), gasConstant);
@@ -302,12 +306,12 @@ int main()
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, densitySSBO);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, pressureSSBO);
 
-        glDispatchCompute((particleCount + 127) / 128, 1, 1);
+        glDispatchCompute((g_currentParticleCount + 127) / 128, 1, 1);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT); // Ensure density pass is complete
 
         // 4. FORCE PASS: Apply forces and integrate particle positions
         glUseProgram(physicsUpdateShader.shader_obj);
-        glUniform1ui(glGetUniformLocation(physicsUpdateShader.shader_obj, "particleCount"), particleCount);
+        glUniform1ui(glGetUniformLocation(physicsUpdateShader.shader_obj, "particleCount"), g_currentParticleCount);
         glUniform1f(glGetUniformLocation(physicsUpdateShader.shader_obj, "deltaTime"), deltaTime > 0.008f ? 0.008f : deltaTime); // Clamp delta time
         glUniform1f(glGetUniformLocation(physicsUpdateShader.shader_obj, "gravity"), gravityStrength);
         glUniform1f(glGetUniformLocation(physicsUpdateShader.shader_obj, "u_time"), currentFrame);
@@ -319,10 +323,12 @@ int main()
         glUniform1f(glGetUniformLocation(physicsUpdateShader.shader_obj, "boundaryStiffness"), boundaryStiffness);
         glUniform1f(glGetUniformLocation(physicsUpdateShader.shader_obj, "boundaryDamping"), boundaryDamping);
         glUniform1f(glGetUniformLocation(physicsUpdateShader.shader_obj, "pressure_multipiler"), pressure_multipiler);
+        glUniform1f(glGetUniformLocation(physicsUpdateShader.shader_obj, "surfaceTension"), surfaceTension);
+        glUniform1f(glGetUniformLocation(physicsUpdateShader.shader_obj, "surfaceThreshold"), surfaceThreshold);
 
 
         // compute boundary_radius relative to smoothingRadius (keeps visual size consistent)
-        float simBoundaryRadius = std::max(0.005f, smoothingRadius * 0.05f); // min radius 0.005
+        float simBoundaryRadius = smoothingRadius * 0.000005f; // min radius 0.005
 
         // upload to shader
         glUniform1f(glGetUniformLocation(physicsUpdateShader.shader_obj, "boundary_limit"), simBoundaryLimit);
@@ -334,7 +340,7 @@ int main()
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, densitySSBO);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, pressureSSBO);
 
-        glDispatchCompute((particleCount + 127) / 128, 1, 1);
+        glDispatchCompute((g_currentParticleCount + 127) / 128, 1, 1);
         // --- FIX --- Use a barrier that ensures compute shader writes are visible to the vertex rendering stage.
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
 
@@ -348,7 +354,7 @@ int main()
         glUniform1f(glGetUniformLocation(renderShader.shader_obj, "simBoundaryLimit"), simBoundaryLimit);
         float displayAspect = (float)g_ViewportWidth / (float)g_ViewportHeight;
         glUniform1f(glGetUniformLocation(renderShader.shader_obj, "displayAspect"), displayAspect);
-        glDrawArraysInstanced(GL_TRIANGLE_FAN, 0, (GLsizei)(vertices.size() / 3), particleCount);
+        glDrawArraysInstanced(GL_TRIANGLE_FAN, 0, (GLsizei)(vertices.size() / 3), g_currentParticleCount);
 
         // --- IMGUI STEP ---
         ImGui::Begin("Controls");
@@ -356,11 +362,30 @@ int main()
         ImGui::SliderFloat("restDensity", &restDensity, 0.0f, 10.0f);
         ImGui::SliderFloat("gasConstant", &gasConstant, 0.0f, 10.0f);
         ImGui::SliderFloat("Boundary Stiffness", &boundaryStiffness, 500.0f, 10000.0f);
-        ImGui::SliderFloat("Boundary Damping", &boundaryDamping, 0.1f, 1.0f);
+        ImGui::SliderFloat("Boundary limit", &boundaryDamping, 0.1f, 1.0f);
         ImGui::SliderFloat("viscosity", &viscosity, 0.0f, 2.0f);
         ImGui::SliderFloat("viscosityCOnst", &viscosityConstant, 0.0f, 2.0f);
         ImGui::SliderFloat("pressure_multipiler", &pressure_multipiler, 0.0f, 0.01f);
+        ImGui::SliderFloat("surfaceTension", &surfaceTension, 0.0f, 1000.0f);
+
         ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+
+        static int particleSliderCount = g_currentParticleCount;
+
+        // Create the slider. Use a logarithmic scale for better control over large numbers.
+        ImGui::SliderInt("Particle Count", &particleSliderCount, 1, MAX_PARTICLES, "%d", ImGuiSliderFlags_Logarithmic);
+        ImGui::Separator(); // Visual separator
+
+        // Check if the user has released the mouse after changing the slider
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            // This is where you'll trigger the logic to add or remove particles
+            // We'll write this function in the next step.
+            updateParticleCount(particleSliderCount, positionSSBO, velocitySSBO);
+        }
+
+        // Keep the global variable updated while dragging for real-time feedback (optional)
+        // For now, we only update after the edit is finished.
+        g_currentParticleCount = particleSliderCount;
         ImGui::End();
 
         ImGui::Render();
@@ -385,7 +410,6 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height)
     log("Resized to " << width << "x" << height << ", Viewport: " << g_ViewportWidth << "x" << g_ViewportHeight);
 }
 
-
 void ComputeCircleVertices(std::vector<float>& vertices, int numSegments, float radius)
 {
     vertices.clear();
@@ -403,3 +427,46 @@ void ComputeCircleVertices(std::vector<float>& vertices, int numSegments, float 
     }
 }
 
+void updateParticleCount(int newCount, unsigned int posSSBO, unsigned int velSSBO) {
+    if (newCount == g_currentParticleCount) {
+        return; // No change needed
+    }
+
+    if (newCount > g_currentParticleCount) {
+        // --- WE ARE ADDING PARTICLES ---
+        int numToAdd = newCount - g_currentParticleCount;
+        std::vector<glm::vec2> newPositions(numToAdd);
+        std::vector<glm::vec2> newVelocities(numToAdd, glm::vec2(0.0f));
+
+        // Initialize new particles (e.g., in a random circle at the center)
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+
+        for (int i = 0; i < numToAdd; ++i) {
+            float radius = 0.2f * std::sqrt(dist(gen)); // sqrt for uniform area distribution
+            float angle = 2.0f * 3.1415926f * dist(gen);
+            newPositions[i] = glm::vec2(radius * cos(angle), radius * sin(angle));
+        }
+
+        // Upload *only the new data* to the end of the existing buffers
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, posSSBO);
+        glBufferSubData(GL_SHADER_STORAGE_BUFFER,
+            sizeof(glm::vec2) * g_currentParticleCount, // Offset
+            sizeof(glm::vec2) * numToAdd,               // Size
+            newPositions.data());                       // Data
+
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, velSSBO);
+        glBufferSubData(GL_SHADER_STORAGE_BUFFER,
+            sizeof(glm::vec2) * g_currentParticleCount,
+            sizeof(glm::vec2) * numToAdd,
+            newVelocities.data());
+
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+        log("Added " << numToAdd << " particles.");
+    }
+
+    // Whether adding or removing, we update the global count
+    g_currentParticleCount = newCount;
+    log("Particle count set to " << g_currentParticleCount);
+}

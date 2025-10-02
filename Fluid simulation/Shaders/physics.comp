@@ -1,4 +1,4 @@
-﻿#version 430 core
+#version 430 core
 layout(local_size_x = 128, local_size_y = 1, local_size_z = 1) in;
 
 // BINDING 0: Particle Positions (Read/Write)
@@ -36,6 +36,11 @@ uniform float viscosityConstant;
 uniform float boundaryDamping;
 uniform float boundaryStiffness;
 uniform float pressure_multipiler;
+// --- Surface tension ---
+uniform float surfaceTension;    // strength (tune this)
+uniform float surfaceThreshold; 
+const float maxSurfaceForce = 5000.0;
+// min |grad c| to consider surface (e.g. 0.01)
 // --- SPH Kernel Function Gradients/Laplacians ---
 const float PI = 3.14159265359;
 const float SPIKY_GRAD_COEFF = -45.0 / PI;
@@ -44,6 +49,33 @@ const float VISC_LAP_COEFF = 45.0 / PI;
 
 uniform float boundary_limit;   // half-width of the simulation domain, e.g. 1.0
 uniform float boundary_radius;  // region (distance from wall) where wall force acts
+
+
+
+float kernel_W(float dist, float h) {
+    if (dist >= h) return 0.0;
+    float t = (h - dist);
+    // normalized by h^3 to keep scale relative to smoothingRadius
+    return (t * t * t) / (h * h * h + 1e-12);
+}
+
+// dW/dr (radial derivative). gradient = (dW/dr) * r_dir
+float kernel_dW_dr(float dist, float h) {
+    if (dist <= 0.0 || dist >= h) return 0.0;
+    float t = (h - dist);
+    // derivative wrt r: d/dr [(h-r)^3] = -3*(h-r)^2
+    return -3.0 * (t * t) / (h * h * h + 1e-12);
+}
+
+// radial part of laplacian approx (2D): use simple form  d2W/dr2 approx 6*(h-r)/h^3
+// We will use this as a working approximation for surface curvature
+float kernel_laplacian(float dist, float h) {
+    if (dist >= h) return 0.0;
+    return 6.0 * (h - dist) / (h * h * h + 1e-12);
+}
+
+
+
 
 float spiky_kernel_gradient(float dist, float h) {
     if (dist > h) return 0.0;
@@ -88,8 +120,12 @@ void main() {
     // Initialize forces
     vec2 force_pressure = vec2(0.0);
     vec2 force_viscosity = vec2(0.0);
-    // CHANGE 1: Initialize a mouse force vector
+    // mouse force
     vec2 force_mouse = vec2(0.0);
+
+    // --- Surface tension accumulators (2D-friendly, using existing kernels) ---
+    vec2 colorFieldGrad = vec2(0.0);
+    float colorFieldLaplacian = 0.0;
 
     // Calculate forces by iterating through all other particles
     for (uint j = 0; j < particleCount; j++) {
@@ -104,109 +140,108 @@ void main() {
             
             // Pressure Force
             float shared_pressure = (pressure_i + pressures[j]) / 2.0;
-            vec2 pressure_grad = r_dir * particleMass * (shared_pressure / density_j) * spiky_kernel_gradient(dist, smoothingRadius);
+            vec2 pressure_grad = r_dir * particleMass * (shared_pressure / (density_j + 1e-6)) * spiky_kernel_gradient(dist, smoothingRadius);
             force_pressure -= pressure_grad * pressure_multipiler;
 
             // Viscosity Force
             float visc_lap = viscosity_kernel_laplacian(dist, smoothingRadius);
             vec2 vel_diff = velocities[j] - vel_i;
-            force_viscosity += viscosityConstant * particleMass * vel_diff / density_j * visc_lap;
+            force_viscosity += viscosityConstant * particleMass * vel_diff / (density_j + 1e-6) * visc_lap;
+
+            // --- Surface tension contributions (2D) ---
+            // Use spiky gradient for color gradient contribution and visc laplacian for color laplacian
+            float dWdr = kernel_dW_dr(dist, smoothingRadius);
+            colorFieldGrad += (particleMass / density_j) * r_dir * dWdr;
+
+            float lapW = kernel_laplacian(dist, smoothingRadius);
+            colorFieldLaplacian += (particleMass / density_j) * lapW;
         }
     }
-    
+
+
+    vec2 force_surface = vec2(0.0);
+    float grad_len = length(colorFieldGrad);
+    if (grad_len > 0.0 && grad_len > surfaceThreshold) {
+        // curvature estimate kappa ~= colorFieldLaplacian / |grad c|
+        float curvature = colorFieldLaplacian / (grad_len + 1e-2);
+        // f_s = - sigma * curvature * n_hat * |grad c|
+        // simplified to: -sigma * (lap / |grad|) * grad
+
+        force_surface = surfaceTension * curvature * colorFieldGrad;
+
+        // clamp to avoid explosions
+        float fs_len = length(force_surface);
+        if (fs_len > maxSurfaceForce) {
+            force_surface = (force_surface / fs_len) * maxSurfaceForce;
+        }
+    }
     // External Force (Gravity)
     vec2 gravity_accel = vec2(0.0, -gravity);
-    // CHANGE 2: Calculate the mouse force here, before integration
-    // Using "> 0.5" is safer for floats than "== 1.0"
+
+    // Mouse force (pre-integration)
     if (is_mouse_pressed > 0.5) {
         vec2 from_mouse = pos_i - mouse_pos;
         float dist_to_mouse = length(from_mouse);
         float mouse_radius = 0.19; // The mouse will only affect particles within this radius
 
-        if (dist_to_mouse < mouse_radius) {
-            // This creates a force that pushes particles away from the mouse, getting weaker with distance
-            force_mouse = normalize(from_mouse) * 150.0 * (mouse_radius + dist_to_mouse);
+        if (dist_to_mouse < mouse_radius && dist_to_mouse > 0.0) {
+            float force_magnitude = 150.0 * (1.0 - (dist_to_mouse / mouse_radius));
+            force_mouse = normalize(from_mouse) * force_magnitude;
         }
     }
 
+
     // --- Boundary forces (pre-integration push) ---
-    // local per-particle boundary force
     vec2 force_boundary = vec2(0.0);
 
     // left
     float dist_left = pos_i.x - (-boundary_limit);
     if (dist_left < boundary_radius) {
         float penetration = (boundary_radius - dist_left);
-        force_boundary.x += boundaryStiffness * penetration * penetration * particleMass; // scaled by mass
+        force_boundary.x += boundaryStiffness * penetration;
     }
     // right
     float dist_right = (boundary_limit) - pos_i.x;
     if (dist_right < boundary_radius) {
         float penetration = (boundary_radius - dist_right);
-        force_boundary.x -= boundaryStiffness * penetration * penetration * particleMass;
+        force_boundary.x -= boundaryStiffness * penetration ;
     }
     // bottom
     float dist_bottom = pos_i.y - (-boundary_limit);
     if (dist_bottom < boundary_radius) {
         float penetration = (boundary_radius - dist_bottom);
-        force_boundary.y += boundaryStiffness * penetration * penetration * particleMass;
+        force_boundary.y += boundaryStiffness * penetration ;
     }
     // top
     float dist_top = (boundary_limit) - pos_i.y;
     if (dist_top < boundary_radius) {
         float penetration = (boundary_radius - dist_top);
-        force_boundary.y -= boundaryStiffness * penetration * penetration * particleMass;
+        force_boundary.y -= boundaryStiffness * penetration ;
     }
 
-    // --- Sum forces; convert to acceleration ---
-    // force_pressure and force_viscosity are forces (scaled by mass in loop)
-    vec2 total_force = force_pressure + force_viscosity + force_mouse + force_boundary;
-    // acceleration from those forces:
-    vec2 accel_from_forces = total_force / 1; // avoid div0
-    // total acceleration includes gravity
-    vec2 acceleration = accel_from_forces + gravity_accel;
+    // --- Surface tension force (compute after loop) ---
 
-    // --- Integrate (semi-implicit Euler: update velocity from accel, then position from new velocity) ---
-    // semi-implicit helps stability: v_{t+dt} = v_t + a*dt ; x_{t+dt} = x_t + v_{t+dt}*dt
+    // --- Sum forces; convert to acceleration ---
+    vec2 total_force = force_pressure + force_viscosity + force_mouse + force_boundary + force_surface;
+    vec2 accel_from_forces = total_force / 1.0; // mass normalization if needed
+    vec2 acceleration = accel_from_forces + gravity_accel;
+    // global damping: tune this small (e.g. 0.1 - 2.0)
+    float globalDamping = 1.0; // try values 0.2..2.0 externally, or make uniform
+    // apply damping proportional to timestep
+    vel_i *= clamp(1.0 - globalDamping * deltaTime, 0.0, 1.0);
+    // --- Integrate (semi-implicit Euler) ---
     vel_i += acceleration * deltaTime;
     pos_i += vel_i * deltaTime;
 
-    // --- Post-integration position clamping & velocity damping to prevent tunnelling ---
-    float epsilon = 1e-4;
-    // left wall clamp
-    if (pos_i.x < -boundary_limit + epsilon) {
-        pos_i.x = -boundary_limit + epsilon;
-        vel_i.x = -vel_i.x * boundaryDamping;
-    }
-    // right wall clamp
-    if (pos_i.x > boundary_limit - epsilon) {
-        pos_i.x = boundary_limit - epsilon;
-        vel_i.x = -vel_i.x * boundaryDamping;
-    }
-    // bottom clamp
-    if (pos_i.y < -boundary_limit + epsilon) {
-        pos_i.y = -boundary_limit + epsilon;
-        vel_i.y = -vel_i.y * boundaryDamping;
-    }
-    // top clamp
-    if (pos_i.y > boundary_limit - epsilon) {
-        pos_i.y = boundary_limit - epsilon;
-        vel_i.y = -vel_i.y * boundaryDamping;
-    }
 
-    // small velocity threshold to reduce jitter at rest
-    if (length(vel_i) < 1e-4) vel_i = vec2(0.0);
-    // global velocity damping to remove small oscillations (per-frame)
-    float globalDamping = 1.0 - clamp(0.25 * deltaTime, 0.0, 0.25); // 0.75..1.0
-    vel_i *= globalDamping;
-
-        // emergency clamps
-    if (length(vel_i) > 20.0) vel_i = normalize(vel_i) * 20.0;
-    if (length(pos_i) > 100.0) pos_i = clamp(pos_i, vec2(-1e2), vec2(1e2)); // safety
+    // Final safety check to prevent writing NaN/inf back to the buffer
+    if (isnan(vel_i.x) || isnan(vel_i.y) || isinf(vel_i.x) || isinf(vel_i.y)) {
+        vel_i = vec2(0.0);
+        pos_i = vec2(random(pos_i), random(pos_i+0.5)); // Reset to a random position
+    }
 
     // --- WRITE FINAL DATA ---
-    positions[id] = pos_i;
+    positions[id] = pos_i; 
     velocities[id] = vel_i;
 
-    // CHANGE 4: Delete the old, incorrect mouse interaction code from the end of the shader.
 }

@@ -43,11 +43,13 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <None Include="Basic.shader" />
-    <None Include="physics.comp" />
-    <None Include="grid_clear.comp" />
-    <None Include="grid_count.comp" />
+    <None Include="Shaders\physics.comp" />
     <None Include="grid_vis.shader" />
-    <None Include="density.comp" />
+    <None Include="Shaders\Basic.shader" />
+    <None Include="Shaders\density.comp" />
+    <None Include="Shaders\grid_clear.comp" />
+  </ItemGroup>
+  <ItemGroup>
+    <Object Include="Shaders\grid_count.comp" />
   </ItemGroup>
 </Project>

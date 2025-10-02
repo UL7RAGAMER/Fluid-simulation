@@ -4,14 +4,13 @@
 #include <fstream>
 #include <sstream>
 #include <string>
-#include <vector> // Added for reading compute shader file
-#include "glm.hpp" // Added for uniform setters
-#include "gtc/type_ptr.hpp" // Added for uniform setters
+#include <vector>
+#include "glm.hpp"
+#include "gtc/type_ptr.hpp"
 
 class Shader
 {
 private:
-    // --- NEW --- Added COMPUTE shader type
     enum class ShaderType
     {
         NONE = -1, VERTEX = 0, FRAGMENT = 1, COMPUTE = 2
@@ -21,17 +20,15 @@ private:
     {
         std::string VertexShader;
         std::string FragementShader;
-        // --- NEW --- Added a string for the compute shader source
-        std::string ComputeShader;
+        std::string ComputeShader; // This member isn't used by parseShader but completes the struct
     };
 
-    // This function remains the same, parsing vertex/fragment pairs
     static ShaderSource parseShader(const std::string& filepath)
     {
         std::ifstream stream(filepath);
         if (!stream.is_open()) {
             std::cerr << "ERROR: Could not open shader file: " << filepath << std::endl;
-            return { "", "" };
+            return { "", "", "" };
         }
 
         std::string line;
@@ -55,7 +52,6 @@ private:
         return { ss[0].str(), ss[1].str(), "" };
     }
 
-    // --- NEW --- A simpler function to read an entire file into a string for compute shaders
     static std::string ReadFile(const std::string& filepath)
     {
         std::ifstream file(filepath, std::ios::in | std::ios::binary);
@@ -73,8 +69,6 @@ private:
         return "";
     }
 
-
-    // --- MODIFIED --- Updated the error message to be more generic
     static unsigned int CompileShader(unsigned int type, const std::string& source)
     {
         unsigned int shader_id = glCreateShader(type);
@@ -89,17 +83,17 @@ private:
         {
             int length;
             glGetShaderiv(shader_id, GL_INFO_LOG_LENGTH, &length);
-            char* message = (char*)malloc(sizeof(char) * length);
-            glGetShaderInfoLog(shader_id, length, &length, message);
+            // Use a vector for dynamic allocation, which is safer than malloc
+            std::vector<char> message(length);
+            glGetShaderInfoLog(shader_id, length, &length, &message[0]);
 
-            // --- MODIFIED --- More descriptive error message
             std::string shaderTypeName = "Unknown";
             if (type == GL_VERTEX_SHADER) shaderTypeName = "Vertex";
             else if (type == GL_FRAGMENT_SHADER) shaderTypeName = "Fragment";
             else if (type == GL_COMPUTE_SHADER) shaderTypeName = "Compute";
 
-            std::cout << "Failed to compile " << shaderTypeName << " shader" << std::endl;
-            std::cout << message << std::endl;
+            std::cerr << "ERROR: Failed to compile " << shaderTypeName << " shader!" << std::endl;
+            std::cerr << &message[0] << std::endl;
 
             glDeleteShader(shader_id);
             return 0;
@@ -108,34 +102,85 @@ private:
         return shader_id;
     }
 
-    // This function remains the same for creating standard render programs
+    // --- NEW --- Helper function to check for shader program linking errors
+    static bool CheckProgramStatus(unsigned int program, GLenum statusType, const std::string& statusName) {
+        int success;
+        glGetProgramiv(program, statusType, &success);
+        if (!success) {
+            int length;
+            glGetProgramiv(program, GL_INFO_LOG_LENGTH, &length);
+            std::vector<char> infoLog(length);
+            glGetProgramInfoLog(program, length, NULL, &infoLog[0]);
+            std::cerr << "ERROR: Shader program " << statusName << " failed!\n" << &infoLog[0] << std::endl;
+            return false;
+        }
+        return true;
+    }
+
+
     static unsigned int CreateShader(const std::string& vertexShader, const std::string& fragmentShader)
     {
         unsigned int program = glCreateProgram();
         unsigned int vs = CompileShader(GL_VERTEX_SHADER, vertexShader);
         unsigned int fs = CompileShader(GL_FRAGMENT_SHADER, fragmentShader);
 
+        // If compilation failed for either shader, abort.
+        if (vs == 0 || fs == 0) {
+            glDeleteProgram(program);
+            glDeleteShader(vs); // glDeleteShader(0) is a no-op
+            glDeleteShader(fs);
+            return 0;
+        }
+
         glAttachShader(program, vs);
         glAttachShader(program, fs);
         glLinkProgram(program);
-        glValidateProgram(program);
+        
+        // --- NEW --- Check for linking errors
+        if (!CheckProgramStatus(program, GL_LINK_STATUS, "linking")) {
+            glDeleteProgram(program);
+            glDeleteShader(vs);
+            glDeleteShader(fs);
+            return 0;
+        }
 
+        glValidateProgram(program);
+        // Optional: Check validation status as well
+        // CheckProgramStatus(program, GL_VALIDATE_STATUS, "validation");
+
+        // Detach and delete shaders as they are now linked into the program
+        glDetachShader(program, vs);
+        glDetachShader(program, fs);
         glDeleteShader(vs);
         glDeleteShader(fs);
 
         return program;
     }
 
-    // --- NEW --- Function to create a compute shader program
     static unsigned int CreateComputeProgram(const std::string& computeShaderSource)
     {
         unsigned int program = glCreateProgram();
         unsigned int cs = CompileShader(GL_COMPUTE_SHADER, computeShaderSource);
 
+        if (cs == 0) { // Compilation failed
+            glDeleteProgram(program);
+            return 0;
+        }
+
         glAttachShader(program, cs);
         glLinkProgram(program);
+
+        // --- NEW --- Check for linking errors
+        if (!CheckProgramStatus(program, GL_LINK_STATUS, "linking")) {
+            glDeleteProgram(program);
+            glDeleteShader(cs);
+            return 0;
+        }
+
         glValidateProgram(program);
 
+        // Detach and delete the shader
+        glDetachShader(program, cs);
         glDeleteShader(cs);
 
         return program;
@@ -145,37 +190,46 @@ private:
 public:
     unsigned int shader_obj;
 
-    // --- MODIFIED --- The constructor now decides which path to take
-    Shader(const std::string& filepath)
+    // --- MODIFIED --- Constructor with improved error checking
+    Shader(const std::string& filepath) : shader_obj(0) // Initialize shader_obj to 0
     {
         // Check file extension to determine shader type
         if (filepath.size() > 5 && filepath.substr(filepath.size() - 5) == ".comp")
         {
-            // It's a compute shader
             std::cout << "Loading Compute Shader: " << filepath << std::endl;
             std::string computeSource = ReadFile(filepath);
             if (!computeSource.empty()) {
                 shader_obj = CreateComputeProgram(computeSource);
             }
-            else {
-                shader_obj = 0; // Failed to load
-            }
+            // If source is empty, shader_obj remains 0
         }
         else
         {
-            // It's a standard vertex/fragment shader
             std::cout << "Loading Render Shader: " << filepath << std::endl;
             ShaderSource shader = parseShader(filepath);
-            shader_obj = CreateShader(shader.VertexShader, shader.FragementShader);
+
+            // --- NEW --- Check if parsing returned valid shader sources
+            if (shader.VertexShader.empty() || shader.FragementShader.empty()) {
+                std::cerr << "ERROR: Shader source code for vertex or fragment is missing in file: " << filepath << std::endl;
+                // shader_obj remains 0
+            }
+            else {
+                shader_obj = CreateShader(shader.VertexShader, shader.FragementShader);
+            }
+        }
+
+        // --- NEW --- Final check to confirm shader program was created successfully
+        if (shader_obj == 0) {
+            std::cerr << "FATAL: Shader program creation failed for file: " << filepath << std::endl;
         }
     }
 
-    // --- Destructor to clean up the shader program ---
     ~Shader()
     {
         glDeleteProgram(shader_obj);
     }
 
+    // --- Uniform setters remain the same ---
     void setMat4(const char* name, glm::mat4 var)
     {
         glUniformMatrix4fv(glGetUniformLocation(shader_obj, name), 1, GL_FALSE, glm::value_ptr(var));
@@ -193,4 +247,4 @@ public:
         int textureLoc = glGetUniformLocation(shader_obj, name);
         glUniform1i(textureLoc, var);
     }
-};
+};  
