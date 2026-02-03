@@ -79,12 +79,12 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions);GLEW_STATIC;GLEW_STATIC</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(SolutionDir)Fluid simulation\Dependencies\GLEW\include;$(SolutionDir)Fluid simulation\Dependencies\GLFW\include;$(SolutionDir)Fluid simulation\Dependencies\GLM;$(SolutionDir)Fluid simulation\Dependencies\IMGUI;$(SolutionDir)Fluid simulation\Dependencies\STB_IMAGE;C:\Users\Siddharth Kumar\Downloads\elements-master\elements\lib\include\;C:\Users\Siddharth Kumar\Downloads\elements-master\elements\build\_deps\cycfi_infra-src\include\;C:\vcpkg\installed\x64-windows\include\cairo\</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)FluidSimulation\Dependencies\GLEW\include;$(SolutionDir)FluidSimulation\Dependencies\GLFW\include;$(SolutionDir)FluidSimulation\Dependencies\GLM;$(SolutionDir)FluidSimulation\Dependencies\IMGUI;$(SolutionDir)FluidSimulation\Dependencies\STB_IMAGE;$(ProjectDir)src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>$(SolutionDir)Fluid simulation\dependencies\GLFW\lib-vc2022;$(SolutionDir)Fluid simulation\Dependencies\GLEW\lib\Release\Win32;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(SolutionDir)FluidSimulation\dependencies\GLFW\lib-vc2022;$(SolutionDir)FluidSimulation\Dependencies\GLEW\lib\Release\Win32;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>glfw3.lib;opengl32.lib;User32.lib;Gdi32.lib;Shell32.lib;glew32s.lib</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
@@ -96,12 +96,12 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions);GLEW_STATIC;GLEW_STATIC</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(SolutionDir)Fluid simulation\Dependencies\GLEW\include;$(SolutionDir)Fluid simulation\Dependencies\GLFW\include;$(SolutionDir)Fluid simulation\Dependencies\GLM;$(SolutionDir)Fluid simulation\Dependencies\IMGUI;$(SolutionDir)Fluid simulation\Dependencies\STB_IMAGE;C:\Users\Siddharth Kumar\Downloads\elements-master\elements\lib\include\;C:\Users\Siddharth Kumar\Downloads\elements-master\elements\build\_deps\cycfi_infra-src\include\;C:\vcpkg\installed\x64-windows\include\cairo\</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)FluidSimulation\Dependencies\GLEW\include;$(SolutionDir)FluidSimulation\Dependencies\GLFW\include;$(SolutionDir)FluidSimulation\Dependencies\GLM;$(SolutionDir)FluidSimulation\Dependencies\IMGUI;$(SolutionDir)FluidSimulation\Dependencies\STB_IMAGE;$(ProjectDir)src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>$(SolutionDir)Fluid simulation\dependencies\GLFW\lib-vc2022;$(SolutionDir)Fluid simulation\Dependencies\GLEW\lib\Release\Win32;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(SolutionDir)FluidSimulation\dependencies\GLFW\lib-vc2022;$(SolutionDir)FluidSimulation\Dependencies\GLEW\lib\Release\Win32;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>glfw3.lib;opengl32.lib;User32.lib;Gdi32.lib;Shell32.lib;glew32s.lib</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
@@ -111,12 +111,12 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions);GLEW_STATIC;GLEW_STATIC</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(SolutionDir)Fluid simulation\Dependencies\GLEW\include;$(SolutionDir)Fluid simulation\Dependencies\GLFW\include;$(SolutionDir)Fluid simulation\Dependencies\GLM;$(SolutionDir)Fluid simulation\Dependencies\IMGUI;$(SolutionDir)Fluid simulation\Dependencies\STB_IMAGE;C:\Users\Siddharth Kumar\Downloads\elements-master\elements\lib\include\;C:\Users\Siddharth Kumar\Downloads\elements-master\elements\build\_deps\cycfi_infra-src\include\;C:\vcpkg\installed\x64-windows\include\cairo\</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)FluidSimulation\Dependencies\GLEW\include;$(SolutionDir)FluidSimulation\Dependencies\GLFW\include;$(SolutionDir)FluidSimulation\Dependencies\GLM;$(SolutionDir)FluidSimulation\Dependencies\IMGUI;$(SolutionDir)FluidSimulation\Dependencies\STB_IMAGE;$(ProjectDir)src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>$(SolutionDir)Fluid simulation\dependencies\GLFW\lib-vc2022;$(SolutionDir)Fluid simulation\Dependencies\GLEW\lib\Release\Win32;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(SolutionDir)FluidSimulation\dependencies\GLFW\lib-vc2022;$(SolutionDir)FluidSimulation\Dependencies\GLEW\lib\Release\Win32;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>glew32.lib;glfw3.lib;opengl32.lib;User32.lib;Gdi32.lib;Shell32.lib;glew32s.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
@@ -128,12 +128,12 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions);GLEW_STATIC;GLEW_STATIC</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(SolutionDir)Fluid simulation\Dependencies\GLEW\include;$(SolutionDir)Fluid simulation\Dependencies\GLFW\include;$(SolutionDir)Fluid simulation\Dependencies\GLM;$(SolutionDir)Fluid simulation\Dependencies\IMGUI;$(SolutionDir)Fluid simulation\Dependencies\STB_IMAGE;C:\Users\Siddharth Kumar\Downloads\elements-master\elements\lib\include\;C:\Users\Siddharth Kumar\Downloads\elements-master\elements\build\_deps\cycfi_infra-src\include\;C:\vcpkg\installed\x64-windows\include\cairo\</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)FluidSimulation\Dependencies\GLEW\include;$(SolutionDir)FluidSimulation\Dependencies\GLFW\include;$(SolutionDir)FluidSimulation\Dependencies\GLM;$(SolutionDir)FluidSimulation\Dependencies\IMGUI;$(SolutionDir)FluidSimulation\Dependencies\STB_IMAGE;$(ProjectDir)src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>$(SolutionDir)Fluid simulation\dependencies\GLFW\lib-vc2022;$(SolutionDir)Fluid simulation\Dependencies\GLEW\lib\Release\Win32;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(SolutionDir)FluidSimulation\dependencies\GLFW\lib-vc2022;$(SolutionDir)FluidSimulation\Dependencies\GLEW\lib\Release\Win32;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>glew32.lib;glfw3.lib;opengl32.lib;User32.lib;Gdi32.lib;Shell32.lib;glew32s.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
@@ -144,7 +144,19 @@
     <ClCompile Include="Dependencies\IMGUI\imgui_draw.cpp" />
     <ClCompile Include="Dependencies\IMGUI\imgui_tables.cpp" />
     <ClCompile Include="Dependencies\IMGUI\imgui_widgets.cpp" />
-    <ClCompile Include="main.cpp">
+    <ClCompile Include="src\main.cpp">
+      <LanguageStandard Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">stdcpp17</LanguageStandard>
+      <LanguageStandard Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">stdcpp17</LanguageStandard>
+      <LanguageStandard Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">stdcpp17</LanguageStandard>
+      <LanguageStandard Condition="'$(Configuration)|$(Platform)'=='Release|x64'">stdcpp17</LanguageStandard>
+    </ClCompile>
+    <ClCompile Include="src\Simulation.cpp">
+      <LanguageStandard Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">stdcpp17</LanguageStandard>
+      <LanguageStandard Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">stdcpp17</LanguageStandard>
+      <LanguageStandard Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">stdcpp17</LanguageStandard>
+      <LanguageStandard Condition="'$(Configuration)|$(Platform)'=='Release|x64'">stdcpp17</LanguageStandard>
+    </ClCompile>
+    <ClCompile Include="src\Renderer.cpp">
       <LanguageStandard Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">stdcpp17</LanguageStandard>
       <LanguageStandard Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">stdcpp17</LanguageStandard>
       <LanguageStandard Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">stdcpp17</LanguageStandard>
@@ -152,27 +164,28 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Shader.h" />
+    <ClInclude Include="src\Shader.h" />
+    <ClInclude Include="src\Simulation.h" />
+    <ClInclude Include="src\Renderer.h" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="Shaders\Basic.shader">
+    <None Include="assets\shaders\Basic.shader">
       <FileType>Document</FileType>
       <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</DeploymentContent>
     </None>
-    <None Include="Shaders\density.comp">
+    <None Include="assets\shaders\density.comp">
       <FileType>Document</FileType>
       <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</DeploymentContent>
     </None>
-    <None Include="Shaders\grid_clear.comp">
+    <None Include="assets\shaders\grid_clear.comp">
       <FileType>Document</FileType>
       <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</DeploymentContent>
     </None>
-    <None Include="Shaders\grid_count.comp">
+    <None Include="assets\shaders\grid_count.comp">
       <FileType>Document</FileType>
       <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</DeploymentContent>
     </None>
-    <None Include="grid_vis.shader" />
-    <None Include="Shaders\physics.comp">
+    <None Include="assets\shaders\physics.comp">
       <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</DeploymentContent>
     </None>
   </ItemGroup>
