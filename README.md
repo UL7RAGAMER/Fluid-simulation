@@ -26,8 +26,8 @@ The project is organized as follows:
 ## Dependencies
 
 The project includes the following dependencies in the `Dependencies` folder:
-- **GLFW**: Window and input management.
-- **GLEW**: OpenGL extension loading.
+- **GLFW**: Window and input management. 
+- **GLEW**: OpenGL extension loading.(!!! MAKE SURE glew32s.lib is there in "Fluid-simulation\FluidSimulation\Dependencies\GLEW\lib\Release\Win32" !!!)
 - **GLM**: Mathematics library.
 - **ImGui**: Immediate Mode GUI.
 - **stb_image**: Image loading (included but currently unused).

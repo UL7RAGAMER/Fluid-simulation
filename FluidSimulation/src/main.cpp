@@ -111,7 +111,7 @@ int main()
 
         // --- Simulation Update ---
         sim.Update(deltaTime, currentFrame, isMouseDown, mouseX, mouseY, simBoundaryLimit);
-
+        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
         // --- Render ---
         float displayAspect = (float)g_ViewportWidth / (float)g_ViewportHeight;
         renderer.Render(sim.GetParticleCount(), sim.GetPositionSSBO(), sim.GetVelocitySSBO(), sim.GetDensitySSBO(), sim.GetPressureSSBO(), simBoundaryLimit, displayAspect);
